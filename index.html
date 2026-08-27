@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Control de Signos Vitales</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0a1220">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Signos Vitales">
+<style>
+  :root{
+    --bg:#0a1220;
+    --panel:#101b2d;
+    --panel-2:#16233a;
+    --panel-3:#1c2c47;
+    --border:#223350;
+    --border-soft:#1a2740;
+    --text:#e7edf5;
+    --muted:#7d8ba3;
+    --muted-2:#4e5d78;
+    --cyan:#4fd8c9;
+    --green:#7ee787;
+    --red:#ef6461;
+    --amber:#f2c85a;
+    --purple:#b592f5;
+    --grey:#8aa0c4;
+    --morning:#f2c85a;
+    --afternoon:#ef8a4f;
+    --night:#7c93e0;
+    --drain:#5fb0d9;
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{margin:0; padding:0; background:var(--bg); color:var(--text); font-family:var(--sans); height:100%;}
+  #app{max-width:520px; margin:0 auto; min-height:100vh; display:flex; flex-direction:column; padding-bottom:24px;}
+
+  /* header */
+  .topbar{position:sticky; top:0; z-index:20; background:linear-gradient(180deg, var(--bg) 80%, transparent); padding:18px 16px 10px;}
+  .brand{display:flex; align-items:baseline; justify-content:space-between;}
+  .brand h1{font-size:15px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; margin:0; color:var(--text);}
+  .brand .dot{display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--green); margin-right:7px; box-shadow:0 0 6px var(--green); animation:pulse 2s infinite;}
+  .clock{font-family:var(--mono); font-size:13px; color:var(--muted); font-variant-numeric:tabular-nums;}
+  @keyframes pulse{0%,100%{opacity:1;} 50%{opacity:.35;}}
+
+  .backrow{display:flex; align-items:center; gap:10px; padding:14px 16px 4px;}
+  .backbtn{background:none; border:none; color:var(--muted); font-size:14px; font-family:var(--sans); padding:6px 4px; cursor:pointer; display:flex; align-items:center; gap:4px;}
+  .backbtn:active{color:var(--text);}
+  .roomtitle{font-size:19px; font-weight:700; margin:0;}
+  .roomtitle-wrap{flex:1;}
+  .roomsub{font-size:12px; color:var(--muted); margin-top:2px;}
+
+  main{flex:1; padding:0 16px;}
+
+  /* home: room grid */
+  .roomgrid{display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:6px;}
+  .roomcard{position:relative; background:var(--panel); border:1px solid var(--border); border-radius:14px; padding:14px 14px 12px; text-align:left; cursor:pointer; transition:border-color .15s;}
+  .roomcard:active{border-color:var(--cyan);}
+  .roomcard .rname{font-size:16px; font-weight:700; color:var(--text);}
+  .roomcard .rtime{font-size:10.5px; color:var(--muted-2); margin-top:2px; font-family:var(--mono);}
+  .roomcard .rstats{display:flex; flex-wrap:wrap; gap:6px 10px; margin-top:10px;}
+  .roomcard .rstat{font-family:var(--mono); font-size:12px;}
+  .roomcard .rstat b{font-weight:700;}
+  .roomcard .rempty{margin-top:10px; font-size:11.5px; color:var(--muted-2); font-style:italic;}
+  .roomcard .delbtn{position:absolute; top:8px; right:8px; width:22px; height:22px; border-radius:50%; border:1px solid var(--border); background:var(--panel-2); color:var(--muted); font-size:13px; line-height:1; display:flex; align-items:center; justify-content:center; cursor:pointer;}
+  .roomcard .delbtn:active{color:var(--red); border-color:var(--red);}
+
+  .addroom{background:var(--panel-2); border:1.5px dashed var(--border); border-radius:14px; padding:14px; display:flex; align-items:center; justify-content:center; flex-direction:column; gap:4px; cursor:pointer; min-height:78px;}
+  .addroom .plus{font-size:22px; color:var(--cyan); line-height:1;}
+  .addroom span{font-size:11.5px; color:var(--muted);}
+
+  .addroom-form{display:flex; gap:8px; margin-top:6px;}
+  .addroom-form input{flex:1; background:var(--panel-2); border:1px solid var(--border); border-radius:10px; padding:11px 12px; color:var(--text); font-size:15px; font-family:var(--sans);}
+  .addroom-form input:focus{outline:none; border-color:var(--cyan);}
+  .addroom-form button{background:var(--cyan); color:#06231f; border:none; border-radius:10px; padding:0 16px; font-weight:700; font-size:14px; cursor:pointer;}
+
+  .emptystate{text-align:center; color:var(--muted); font-size:13px; margin-top:60px; line-height:1.6;}
+
+  /* monitor panel */
+  .monitor{background:var(--panel); border:1px solid var(--border); border-radius:16px; padding:16px; margin-top:14px;}
+  .monitor-head{display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;}
+  .monitor-head span{font-size:10.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--muted-2); font-weight:700;}
+  .monitor-grid{display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px;}
+  .vital{background:var(--panel-2); border-radius:12px; padding:10px 8px; text-align:center; border:1px solid var(--border-soft);}
+  .vital .vlabel{font-size:9.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); font-weight:700;}
+  .vital .vval{font-family:var(--mono); font-size:21px; font-weight:700; margin-top:3px; text-shadow:0 0 14px currentColor;}
+  .vital .vunit{font-size:9px; color:var(--muted-2); margin-top:1px;}
+  .vital.na .vval{color:var(--muted-2); text-shadow:none; font-size:15px;}
+
+  .newctrl-btn{width:100%; margin-top:16px; background:var(--cyan); color:#06231f; border:none; border-radius:12px; padding:14px; font-size:15px; font-weight:700; cursor:pointer;}
+  .newctrl-btn:active{opacity:.85;}
+
+  /* history */
+  .histhead{display:flex; justify-content:space-between; align-items:center; margin:22px 0 10px;}
+  .histhead span{font-size:10.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--muted-2); font-weight:700;}
+  .histlist{display:flex; flex-direction:column; gap:8px;}
+  .histrow{background:var(--panel); border:1px solid var(--border-soft); border-radius:12px; padding:10px 12px; display:flex; align-items:center; gap:10px;}
+  .histrow .htime{font-family:var(--mono); font-size:12px; color:var(--muted); min-width:44px;}
+  .shift-badge{display:inline-flex; align-items:center; gap:4px; font-size:10px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; padding:3px 7px; border-radius:6px; font-family:var(--sans);}
+  .shift-badge.M{color:var(--morning); background:rgba(242,200,90,.12);}
+  .shift-badge.T{color:var(--afternoon); background:rgba(239,138,79,.12);}
+  .shift-badge.N{color:var(--night); background:rgba(124,147,224,.12);}
+  .grouphead{display:flex; align-items:center; gap:8px; margin:16px 0 8px; padding-top:4px;}
+  .grouphead:first-child{margin-top:0;}
+  .grouphead .gdate{font-size:11px; color:var(--muted-2); font-family:var(--mono);}
+  .time-badge-row{display:flex; align-items:center; gap:10px; margin-top:8px;}
+  .histrow .hvals{flex:1; display:flex; flex-wrap:wrap; gap:4px 10px; font-family:var(--mono); font-size:11.5px; color:var(--text);}
+  .histrow .hvals em{color:var(--muted-2); font-style:normal;}
+  .histrow .hdel{background:none; border:none; color:var(--muted-2); font-size:15px; cursor:pointer; padding:4px;}
+  .histrow .hdel:active{color:var(--red);}
+
+  /* new control form */
+  .formcard{background:var(--panel); border:1px solid var(--border); border-radius:16px; padding:16px; margin-top:12px;}
+  .fieldrow{margin-bottom:16px;}
+  .fieldrow:last-child{margin-bottom:0;}
+  .flabel{font-size:11px; letter-spacing:.05em; text-transform:uppercase; font-weight:700; color:var(--muted); margin-bottom:7px; display:flex; align-items:center; gap:6px;}
+  .flabel .unit{font-weight:400; text-transform:none; letter-spacing:0; color:var(--muted-2);}
+  .numinput{width:100%; background:var(--panel-2); border:1.5px solid var(--border); border-radius:12px; padding:13px 14px; color:var(--text); font-family:var(--mono); font-size:20px; font-weight:700;}
+  .numinput:focus{outline:none; border-color:var(--cyan);}
+  .numinput::placeholder{color:var(--muted-2); font-weight:400; font-size:15px;}
+
+  .ta-pair{display:flex; align-items:center; gap:8px;}
+  .ta-pair .numinput{text-align:center;}
+  .ta-slash{font-family:var(--mono); font-size:20px; color:var(--muted-2); font-weight:700;}
+
+  .diuresis-row{display:flex; gap:8px;}
+  .sign-btn{flex:0 0 52px; height:50px; border-radius:12px; border:1.5px solid var(--border); background:var(--panel-2); color:var(--muted); font-size:20px; font-weight:700; cursor:pointer;}
+  .sign-btn.active[data-sign="+"]{border-color:var(--green); color:var(--green); background:#122318;}
+  .sign-btn.active[data-sign="-"]{border-color:var(--red); color:var(--red); background:#231414;}
+
+  .presets{display:flex; gap:7px; margin-top:8px;}
+  .preset-btn{flex:1; background:var(--panel-2); border:1px solid var(--border); border-radius:9px; padding:8px 0; color:var(--muted); font-family:var(--mono); font-size:13px; font-weight:700; cursor:pointer;}
+  .preset-btn.active{border-color:var(--purple); color:var(--purple); background:#1c1730;}
+
+  .time-toggle{font-size:12px; color:var(--muted); text-decoration:underline; background:none; border:none; cursor:pointer; padding:0; margin-top:4px;}
+  .timeinput{margin-top:8px; background:var(--panel-2); border:1.5px solid var(--border); border-radius:10px; padding:9px 12px; color:var(--text); font-family:var(--mono); font-size:15px;}
+
+  .save-bar{position:sticky; bottom:0; background:linear-gradient(0deg, var(--bg) 75%, transparent); padding:14px 16px 6px; margin-top:8px;}
+  .save-btn{width:100%; background:var(--cyan); color:#06231f; border:none; border-radius:13px; padding:15px; font-size:15.5px; font-weight:700; cursor:pointer;}
+  .save-btn:active{opacity:.85;}
+  .cancel-btn{width:100%; background:none; border:none; color:var(--muted); font-size:13px; padding:10px; cursor:pointer;}
+
+  ::selection{background:var(--cyan); color:#06231f;}
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+const STORE_KEY = 'rooms-and-records';
+let db = { rooms: [], records: {} };
+let view = 'home';
+let currentRoomId = null;
+let draft = {};
+let loaded = false;
+
+const COLORS = { ta:'var(--red)', fc:'var(--green)', spo2:'var(--cyan)', temp:'var(--amber)', diu:'var(--purple)', cat:'var(--grey)', dren:'var(--drain)' };
+
+function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
+function pad(n){ return n.toString().padStart(2,'0'); }
+function nowTime(){ const d = new Date(); return pad(d.getHours())+':'+pad(d.getMinutes()); }
+function nowStamp(){ const d = new Date(); return { date: d.toISOString().slice(0,10), display: pad(d.getDate())+'/'+pad(d.getMonth()+1) }; }
+
+async function loadDB(){
+  try{
+    const raw = localStorage.getItem(STORE_KEY);
+    db = raw ? JSON.parse(raw) : { rooms: [], records: {} };
+  }catch(e){
+    db = { rooms: [], records: {} };
+  }
+  loaded = true;
+  render();
+}
+async function saveDB(){
+  try{ localStorage.setItem(STORE_KEY, JSON.stringify(db)); }
+  catch(e){ console.error('storage error', e); }
+}
+
+function addRoom(name){
+  name = name.trim();
+  if(!name) return;
+  const id = uid();
+  db.rooms.push({ id, name });
+  db.records[id] = [];
+  saveDB();
+  render();
+}
+function deleteRoom(id){
+  const room = db.rooms.find(r=>r.id===id);
+  if(!room) return;
+  if(!confirm('¿Eliminar "'+room.name+'" y todos sus controles?')) return;
+  db.rooms = db.rooms.filter(r=>r.id!==id);
+  delete db.records[id];
+  saveDB();
+  render();
+}
+function openRoom(id){ currentRoomId = id; view = 'room'; render(); }
+function openNewControl(id){
+  currentRoomId = id;
+  draft = { ta_sys:'', ta_dia:'', fc:'', spo2:'', temp:'', dsign:null, dvalue:'', catsign:null, catvalue:'', drensign:null, drenvalue:'', time: nowTime() };
+  view = 'newControl';
+  render();
+}
+function deleteRecord(roomId, recId){
+  if(!confirm('¿Eliminar este control?')) return;
+  db.records[roomId] = db.records[roomId].filter(r=>r.id!==recId);
+  saveDB();
+  render();
+}
+function saveControl(){
+  const roomId = currentRoomId;
+  const stamp = nowStamp();
+  const rec = {
+    id: uid(),
+    time: draft.time || nowTime(),
+    date: stamp.date,
+    dateDisplay: stamp.display,
+    ta_sys: draft.ta_sys || null,
+    ta_dia: draft.ta_dia || null,
+    fc: draft.fc || null,
+    spo2: draft.spo2 || null,
+    temp: draft.temp || null,
+    dsign: draft.dsign || null,
+    dvalue: draft.dvalue || null,
+    catsign: draft.catsign || null,
+    catvalue: draft.catvalue === '' ? null : draft.catvalue,
+    drensign: draft.drensign || null,
+    drenvalue: draft.drenvalue === '' ? null : draft.drenvalue
+  };
+  db.records[roomId].unshift(rec);
+  saveDB();
+  view = 'room';
+  render();
+}
+function goHome(){ view='home'; currentRoomId=null; render(); }
+function goRoom(){ view='room'; render(); }
+
+const SHIFTS = {
+  M: { label:'Mañana', abbr:'M', color:'var(--morning)' },
+  T: { label:'Tarde', abbr:'T', color:'var(--afternoon)' },
+  N: { label:'Noche', abbr:'N', color:'var(--night)' }
+};
+function getShift(timeStr){
+  if(!timeStr) return SHIFTS.M;
+  const h = parseInt(timeStr.split(':')[0], 10);
+  if(h>=6 && h<14) return SHIFTS.M;
+  if(h>=14 && h<22) return SHIFTS.T;
+  return SHIFTS.N;
+}
+function shiftBadge(timeStr){
+  const s = getShift(timeStr);
+  return '<span class="shift-badge '+s.abbr+'">'+s.label+'</span>';
+}
+function fmtVal(v, unit){ return (v===null || v===undefined || v==='') ? null : v + (unit||''); }
+function latestOf(roomId){
+  const list = db.records[roomId] || [];
+  return list.length ? list[0] : null;
+}
+
+function vitalBox(label, val, unit, colorVar){
+  const has = val !== null && val !== undefined && val !== '';
+  return '<div class="vital'+(has?'':' na')+'">'+
+    '<div class="vlabel">'+label+'</div>'+
+    '<div class="vval" style="color:'+(has?colorVar:'var(--muted-2)')+'">'+(has?val:'—')+'</div>'+
+    (unit && has ? '<div class="vunit">'+unit+'</div>' : '')+
+  '</div>';
+}
+
+function render(){
+  const app = document.getElementById('app');
+  if(!loaded){ app.innerHTML = '<div class="emptystate">Cargando…</div>'; return; }
+
+  if(view === 'home'){
+    let cards = db.rooms.map(r=>{
+      const rec = latestOf(r.id);
+      let statsHtml;
+      if(rec){
+        const ta = (rec.ta_sys && rec.ta_dia) ? rec.ta_sys+'/'+rec.ta_dia : null;
+        const parts = [];
+        if(ta) parts.push('<span class="rstat" style="color:'+COLORS.ta+'">TA <b>'+ta+'</b></span>');
+        if(rec.fc) parts.push('<span class="rstat" style="color:'+COLORS.fc+'">FC <b>'+rec.fc+'</b></span>');
+        if(rec.spo2) parts.push('<span class="rstat" style="color:'+COLORS.spo2+'">SpO2 <b>'+rec.spo2+'%</b></span>');
+        statsHtml = parts.length ? '<div class="rstats">'+parts.join('')+'</div>' : '<div class="rempty">Sin datos vitales</div>';
+      } else {
+        statsHtml = '<div class="rempty">Sin controles aún</div>';
+      }
+      return '<div class="roomcard" onclick="openRoom(\''+r.id+'\')">'+
+        '<button class="delbtn" onclick="event.stopPropagation(); deleteRoom(\''+r.id+'\')">✕</button>'+
+        '<div class="rname">'+r.name+'</div>'+
+        (rec ? '<div class="rtime">Último '+rec.dateDisplay+' · '+rec.time+'</div>' : '')+
+        statsHtml+
+      '</div>';
+    }).join('');
+
+    app.innerHTML =
+      '<div class="topbar"><div class="brand">'+
+        '<h1><span class="dot"></span>Control de signos</h1>'+
+        '<span class="clock" id="clock">'+nowTime()+'</span>'+
+      '</div></div>'+
+      '<main>'+
+        (db.rooms.length ? '<div class="roomgrid">'+cards+
+          '<div class="addroom" id="addRoomBtn" onclick="showAddRoomForm()">'+
+            '<div class="plus">+</div><span>Habitación</span>'+
+          '</div>'+
+        '</div>' :
+        '<div class="roomgrid"><div class="addroom" onclick="showAddRoomForm()"><div class="plus">+</div><span>Agregar habitación</span></div></div>'+
+        '<div class="emptystate">Agregá tus habitaciones para<br>empezar a cargar controles.</div>')+
+        '<div id="addRoomFormWrap"></div>'+
+      '</main>';
+    return;
+  }
+
+  if(view === 'room'){
+    const room = db.rooms.find(r=>r.id===currentRoomId);
+    if(!room){ goHome(); return; }
+    const rec = latestOf(room.id);
+    const list = db.records[room.id] || [];
+
+    const monitor =
+      '<div class="monitor"><div class="monitor-head"><span>Último control'+(rec ? ' · '+rec.dateDisplay+' '+rec.time : '')+'</span>'+(rec?shiftBadge(rec.time):'')+'</div>'+
+      '<div class="monitor-grid">'+
+        vitalBox('TA', rec && rec.ta_sys && rec.ta_dia ? rec.ta_sys+'/'+rec.ta_dia : null, 'mmHg', COLORS.ta)+
+        vitalBox('FC', rec ? rec.fc : null, 'lpm', COLORS.fc)+
+        vitalBox('SpO2', rec ? rec.spo2 : null, '%', COLORS.spo2)+
+        vitalBox('Temp', rec ? rec.temp : null, '°C', COLORS.temp)+
+        vitalBox('Diuresis', rec && (rec.dsign || rec.dvalue) ? (rec.dsign||'')+(rec.dvalue||'') : null, rec && rec.dvalue ? 'ml':'', COLORS.diu)+
+        vitalBox('Catarsis', rec && (rec.catsign || rec.catvalue) ? (rec.catsign||'')+(rec.catvalue||'') : null, rec && rec.catvalue ? 'veces':'', COLORS.cat)+
+        vitalBox('Drenaje', rec && (rec.drensign || rec.drenvalue) ? (rec.drensign||'')+(rec.drenvalue||'') : null, rec && rec.drenvalue ? 'ml':'', COLORS.dren)+
+      '</div></div>';
+
+    const sorted = list.slice().sort((a,b)=> (b.date+b.time).localeCompare(a.date+a.time));
+    let histRows = '';
+    if(sorted.length){
+      let lastKey = null;
+      sorted.forEach(r=>{
+        const s = getShift(r.time);
+        const key = r.date+'-'+s.abbr;
+        if(key !== lastKey){
+          histRows += '<div class="grouphead"><span class="shift-badge '+s.abbr+'">'+s.label+'</span><span class="gdate">'+r.dateDisplay+'</span></div>';
+          lastKey = key;
+        }
+        const ta = (r.ta_sys && r.ta_dia) ? 'TA '+r.ta_sys+'/'+r.ta_dia : '';
+        const bits = [ta, r.fc?('FC '+r.fc):'', r.spo2?('SpO2 '+r.spo2+'%'):'', r.temp?('T '+r.temp+'°'):'',
+          (r.dsign||r.dvalue)?('Diu '+(r.dsign||'')+(r.dvalue||'')):'',
+          (r.catsign||r.catvalue)?('Cat '+(r.catsign||'')+(r.catvalue||'')):'',
+          (r.drensign||r.drenvalue)?('Dren '+(r.drensign||'')+(r.drenvalue||'')):''
+        ].filter(Boolean);
+        histRows += '<div class="histrow">'+
+          '<div class="htime">'+r.time+'</div>'+
+          '<div class="hvals">'+(bits.length?bits.join(' &nbsp;·&nbsp; '):'<em>sin datos</em>')+'</div>'+
+          '<button class="hdel" onclick="deleteRecord(\''+room.id+'\',\''+r.id+'\')">✕</button>'+
+        '</div>';
+      });
+    } else {
+      histRows = '<div class="emptystate">Todavía no hay controles<br>cargados en esta habitación.</div>';
+    }
+
+    app.innerHTML =
+      '<div class="topbar backrow" style="padding-top:14px;">'+
+        '<button class="backbtn" onclick="goHome()">‹ Habitaciones</button>'+
+      '</div>'+
+      '<div class="backrow" style="padding-top:0;">'+
+        '<div class="roomtitle-wrap"><div class="roomtitle">'+room.name+'</div><div class="roomsub">'+list.length+' control'+(list.length===1?'':'es')+' registrado'+(list.length===1?'':'s')+'</div></div>'+
+      '</div>'+
+      '<main>'+
+        monitor+
+        '<button class="newctrl-btn" onclick="openNewControl(\''+room.id+'\')">+ Nuevo control</button>'+
+        '<div class="histhead"><span>Historial</span></div>'+
+        '<div class="histlist">'+histRows+'</div>'+
+      '</main>';
+    return;
+  }
+
+  if(view === 'newControl'){
+    const room = db.rooms.find(r=>r.id===currentRoomId);
+    if(!room){ goHome(); return; }
+
+    app.innerHTML =
+      '<div class="topbar backrow" style="padding-top:14px;">'+
+        '<button class="backbtn" onclick="goRoom()">‹ Cancelar</button>'+
+      '</div>'+
+      '<div class="backrow" style="padding-top:0;">'+
+        '<div class="roomtitle-wrap"><div class="roomtitle">Nuevo control</div><div class="roomsub">'+room.name+'</div></div>'+
+      '</div>'+
+      '<main>'+
+        '<div class="formcard">'+
+          '<div class="fieldrow">'+
+            '<div class="flabel">Presión arterial <span class="unit">mmHg</span></div>'+
+            '<div class="ta-pair">'+
+              '<input class="numinput" id="f_ta_sys" type="number" inputmode="numeric" placeholder="Sist." value="'+draft.ta_sys+'">'+
+              '<span class="ta-slash">/</span>'+
+              '<input class="numinput" id="f_ta_dia" type="number" inputmode="numeric" placeholder="Diast." value="'+draft.ta_dia+'">'+
+            '</div>'+
+          '</div>'+
+          '<div class="fieldrow">'+
+            '<div class="flabel">Frecuencia cardíaca <span class="unit">lpm</span></div>'+
+            '<input class="numinput" id="f_fc" type="number" inputmode="numeric" placeholder="0" value="'+draft.fc+'">'+
+          '</div>'+
+          '<div class="fieldrow">'+
+            '<div class="flabel">Saturación O2 <span class="unit">%</span></div>'+
+            '<input class="numinput" id="f_spo2" type="number" inputmode="numeric" placeholder="0" value="'+draft.spo2+'">'+
+          '</div>'+
+          '<div class="fieldrow">'+
+            '<div class="flabel">Temperatura <span class="unit">°C</span></div>'+
+            '<input class="numinput" id="f_temp" type="number" inputmode="decimal" step="0.1" placeholder="0.0" value="'+draft.temp+'">'+
+          '</div>'+
+          '<div class="fieldrow">'+
+            '<div class="flabel">Diuresis <span class="unit">signo + cantidad opcional (ml)</span></div>'+
+            '<div class="diuresis-row">'+
+              '<button type="button" class="sign-btn'+(draft.dsign==='+'?' active':'')+'" data-sign="+" onclick="toggleSign(\'d\',\'+\')">+</button>'+
+              '<button type="button" class="sign-btn'+(draft.dsign==='-'?' active':'')+'" data-sign="-" onclick="toggleSign(\'d\',\'-\')">−</button>'+
+              '<input class="numinput" id="f_dvalue" type="number" inputmode="numeric" placeholder="cantidad ml" value="'+draft.dvalue+'">'+
+            '</div>'+
+          '</div>'+
+          '<div class="fieldrow">'+
+            '<div class="flabel">Catarsis <span class="unit">signo + veces opcional</span></div>'+
+            '<div class="diuresis-row">'+
+              '<button type="button" class="sign-btn'+(draft.catsign==='+'?' active':'')+'" data-sign="+" onclick="toggleSign(\'cat\',\'+\')">+</button>'+
+              '<button type="button" class="sign-btn'+(draft.catsign==='-'?' active':'')+'" data-sign="-" onclick="toggleSign(\'cat\',\'-\')">−</button>'+
+              '<input class="numinput" id="f_catvalue" type="number" inputmode="numeric" placeholder="veces" value="'+draft.catvalue+'">'+
+            '</div>'+
+            '<div class="presets">'+
+              [0,1,2,3].map(n=>'<button type="button" class="preset-btn'+(String(draft.catvalue)===String(n)?' active':'')+'" onclick="setPresetValue(\'cat\','+n+')">'+n+'</button>').join('')+
+            '</div>'+
+          '</div>'+
+          '<div class="fieldrow">'+
+            '<div class="flabel">Drenaje <span class="unit">signo + cantidad opcional (ml)</span></div>'+
+            '<div class="diuresis-row">'+
+              '<button type="button" class="sign-btn'+(draft.drensign==='+'?' active':'')+'" data-sign="+" onclick="toggleSign(\'dren\',\'+\')">+</button>'+
+              '<button type="button" class="sign-btn'+(draft.drensign==='-'?' active':'')+'" data-sign="-" onclick="toggleSign(\'dren\',\'-\')">−</button>'+
+              '<input class="numinput" id="f_drenvalue" type="number" inputmode="numeric" placeholder="cantidad ml" value="'+draft.drenvalue+'">'+
+            '</div>'+
+          '</div>'+
+          '<div class="fieldrow">'+
+            '<div class="flabel">Hora del control</div>'+
+            '<div class="time-badge-row">'+
+              '<input class="timeinput" id="f_time" type="time" value="'+draft.time+'">'+
+              '<span id="shiftBadgeWrap">'+shiftBadge(draft.time)+'</span>'+
+            '</div>'+
+          '</div>'+
+        '</div>'+
+        '<div class="save-bar">'+
+          '<button class="save-btn" onclick="commitAndSave()">Guardar control</button>'+
+          '<button class="cancel-btn" onclick="goRoom()">Cancelar</button>'+
+        '</div>'+
+      '</main>';
+
+    // wire inputs to draft on the fly
+    ['ta_sys','ta_dia','fc','spo2','temp','dvalue','catvalue','drenvalue'].forEach(key=>{
+      const el = document.getElementById('f_'+key);
+      if(el) el.addEventListener('input', ()=>{ draft[key] = el.value; });
+    });
+    const timeEl = document.getElementById('f_time');
+    if(timeEl) timeEl.addEventListener('input', ()=>{
+      draft.time = timeEl.value;
+      const badgeWrap = document.getElementById('shiftBadgeWrap');
+      if(badgeWrap) badgeWrap.innerHTML = shiftBadge(draft.time);
+    });
+
+    return;
+  }
+}
+
+function showAddRoomForm(){
+  const wrap = document.getElementById('addRoomFormWrap');
+  wrap.innerHTML = '<div class="addroom-form">'+
+    '<input id="newRoomInput" type="text" placeholder="Nombre o número de habitación" autofocus>'+
+    '<button onclick="submitAddRoom()">Agregar</button>'+
+  '</div>';
+  const input = document.getElementById('newRoomInput');
+  input.focus();
+  input.addEventListener('keydown', (e)=>{ if(e.key==='Enter') submitAddRoom(); });
+}
+function submitAddRoom(){
+  const input = document.getElementById('newRoomInput');
+  if(!input) return;
+  addRoom(input.value);
+}
+function toggleSign(prefix, sign){
+  const key = prefix+'sign';
+  draft[key] = (draft[key] === sign) ? null : sign;
+  render();
+}
+function setPresetValue(prefix, n){
+  draft[prefix+'value'] = String(n);
+  render();
+}
+function commitAndSave(){
+  saveControl();
+}
+
+setInterval(()=>{
+  const c = document.getElementById('clock');
+  if(c) c.textContent = nowTime();
+}, 15000);
+
+loadDB();
+
+if('serviceWorker' in navigator){
+  window.addEventListener('load', ()=>{
+    navigator.serviceWorker.register('sw.js').catch(()=>{});
+  });
+}
+</script>
+</body>
+</html>

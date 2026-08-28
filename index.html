@@ -11,6 +11,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Signos Vitales">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <style>
   :root{
     --bg:#0a1220;
@@ -112,6 +113,15 @@
   .histrow .hvals em{color:var(--muted-2); font-style:normal;}
   .histrow .hdel{background:none; border:none; color:var(--muted-2); font-size:15px; cursor:pointer; padding:4px;}
   .histrow .hdel:active{color:var(--red);}
+  .histrow .hedit{background:none; border:none; color:var(--muted-2); font-size:14px; cursor:pointer; padding:4px;}
+  .histrow .hedit:active{color:var(--cyan);}
+
+  .backrow .exportbtn{background:var(--panel-2); border:1px solid var(--border); color:var(--muted); font-size:12.5px; font-weight:700; padding:8px 12px; border-radius:9px; cursor:pointer; white-space:nowrap;}
+  .backrow .exportbtn:active{border-color:var(--cyan); color:var(--cyan);}
+  .export-title{display:none;}
+  #exportArea.exporting{padding:16px; background:var(--bg);}
+  #exportArea.exporting .export-title{display:block; font-size:16px; font-weight:700; color:var(--text); margin-bottom:10px;}
+  #exportArea.exporting .export-title span{font-weight:400; color:var(--muted); font-size:13px;}
 
   /* new control form */
   .formcard{background:var(--panel); border:1px solid var(--border); border-radius:16px; padding:16px; margin-top:12px;}
@@ -156,6 +166,7 @@ let db = { rooms: [], records: {} };
 let view = 'home';
 let currentRoomId = null;
 let draft = {};
+let editingId = null;
 let loaded = false;
 
 const COLORS = { ta:'var(--red)', fc:'var(--green)', spo2:'var(--cyan)', temp:'var(--amber)', diu:'var(--purple)', cat:'var(--grey)', dren:'var(--drain)' };
@@ -201,7 +212,23 @@ function deleteRoom(id){
 function openRoom(id){ currentRoomId = id; view = 'room'; render(); }
 function openNewControl(id){
   currentRoomId = id;
+  editingId = null;
   draft = { ta_sys:'', ta_dia:'', fc:'', spo2:'', temp:'', dsign:null, dvalue:'', catsign:null, catvalue:'', drensign:null, drenvalue:'', time: nowTime() };
+  view = 'newControl';
+  render();
+}
+function openEditControl(roomId, recId){
+  const rec = (db.records[roomId] || []).find(r=>r.id===recId);
+  if(!rec) return;
+  currentRoomId = roomId;
+  editingId = recId;
+  draft = {
+    ta_sys: rec.ta_sys ?? '', ta_dia: rec.ta_dia ?? '', fc: rec.fc ?? '', spo2: rec.spo2 ?? '', temp: rec.temp ?? '',
+    dsign: rec.dsign ?? null, dvalue: rec.dvalue ?? '',
+    catsign: rec.catsign ?? null, catvalue: rec.catvalue ?? '',
+    drensign: rec.drensign ?? null, drenvalue: rec.drenvalue ?? '',
+    time: rec.time
+  };
   view = 'newControl';
   render();
 }
@@ -213,12 +240,8 @@ function deleteRecord(roomId, recId){
 }
 function saveControl(){
   const roomId = currentRoomId;
-  const stamp = nowStamp();
-  const rec = {
-    id: uid(),
+  const fields = {
     time: draft.time || nowTime(),
-    date: stamp.date,
-    dateDisplay: stamp.display,
     ta_sys: draft.ta_sys || null,
     ta_dia: draft.ta_dia || null,
     fc: draft.fc || null,
@@ -231,13 +254,24 @@ function saveControl(){
     drensign: draft.drensign || null,
     drenvalue: draft.drenvalue === '' ? null : draft.drenvalue
   };
-  db.records[roomId].unshift(rec);
+  if(editingId){
+    const list = db.records[roomId] || [];
+    const idx = list.findIndex(r=>r.id===editingId);
+    if(idx !== -1){
+      list[idx] = Object.assign({}, list[idx], fields);
+    }
+  } else {
+    const stamp = nowStamp();
+    const rec = Object.assign({ id: uid(), date: stamp.date, dateDisplay: stamp.display }, fields);
+    db.records[roomId].unshift(rec);
+  }
+  editingId = null;
   saveDB();
   view = 'room';
   render();
 }
 function goHome(){ view='home'; currentRoomId=null; render(); }
-function goRoom(){ view='room'; render(); }
+function goRoom(){ view='room'; editingId=null; render(); }
 
 const SHIFTS = {
   M: { label:'Mañana', abbr:'M', color:'var(--morning)' },
@@ -284,6 +318,8 @@ function render(){
         if(ta) parts.push('<span class="rstat" style="color:'+COLORS.ta+'">TA <b>'+ta+'</b></span>');
         if(rec.fc) parts.push('<span class="rstat" style="color:'+COLORS.fc+'">FC <b>'+rec.fc+'</b></span>');
         if(rec.spo2) parts.push('<span class="rstat" style="color:'+COLORS.spo2+'">SpO2 <b>'+rec.spo2+'%</b></span>');
+        if(rec.temp) parts.push('<span class="rstat" style="color:'+COLORS.temp+'">T <b>'+rec.temp+'°</b></span>');
+        if(rec.dsign || rec.dvalue) parts.push('<span class="rstat" style="color:'+COLORS.diu+'">Diu <b>'+(rec.dsign||'')+(rec.dvalue||'')+'</b></span>');
         statsHtml = parts.length ? '<div class="rstats">'+parts.join('')+'</div>' : '<div class="rempty">Sin datos vitales</div>';
       } else {
         statsHtml = '<div class="rempty">Sin controles aún</div>';
@@ -352,6 +388,7 @@ function render(){
         histRows += '<div class="histrow">'+
           '<div class="htime">'+r.time+'</div>'+
           '<div class="hvals">'+(bits.length?bits.join(' &nbsp;·&nbsp; '):'<em>sin datos</em>')+'</div>'+
+          '<button class="hedit" onclick="openEditControl(\''+room.id+'\',\''+r.id+'\')">✎</button>'+
           '<button class="hdel" onclick="deleteRecord(\''+room.id+'\',\''+r.id+'\')">✕</button>'+
         '</div>';
       });
@@ -365,12 +402,16 @@ function render(){
       '</div>'+
       '<div class="backrow" style="padding-top:0;">'+
         '<div class="roomtitle-wrap"><div class="roomtitle">'+room.name+'</div><div class="roomsub">'+list.length+' control'+(list.length===1?'':'es')+' registrado'+(list.length===1?'':'s')+'</div></div>'+
+        '<button class="exportbtn" onclick="exportRoomImage(\''+room.id+'\')">⬇ Imagen</button>'+
       '</div>'+
       '<main>'+
-        monitor+
+        '<div id="exportArea">'+
+          '<div class="export-title">'+room.name+' <span>· '+nowStamp().display+'</span></div>'+
+          monitor+
+          '<div class="histhead"><span>Historial</span></div>'+
+          '<div class="histlist">'+histRows+'</div>'+
+        '</div>'+
         '<button class="newctrl-btn" onclick="openNewControl(\''+room.id+'\')">+ Nuevo control</button>'+
-        '<div class="histhead"><span>Historial</span></div>'+
-        '<div class="histlist">'+histRows+'</div>'+
       '</main>';
     return;
   }
@@ -384,7 +425,7 @@ function render(){
         '<button class="backbtn" onclick="goRoom()">‹ Cancelar</button>'+
       '</div>'+
       '<div class="backrow" style="padding-top:0;">'+
-        '<div class="roomtitle-wrap"><div class="roomtitle">Nuevo control</div><div class="roomsub">'+room.name+'</div></div>'+
+        '<div class="roomtitle-wrap"><div class="roomtitle">'+(editingId?'Editar control':'Nuevo control')+'</div><div class="roomsub">'+room.name+'</div></div>'+
       '</div>'+
       '<main>'+
         '<div class="formcard">'+
@@ -444,7 +485,7 @@ function render(){
           '</div>'+
         '</div>'+
         '<div class="save-bar">'+
-          '<button class="save-btn" onclick="commitAndSave()">Guardar control</button>'+
+          '<button class="save-btn" onclick="commitAndSave()">'+(editingId?'Guardar cambios':'Guardar control')+'</button>'+
           '<button class="cancel-btn" onclick="goRoom()">Cancelar</button>'+
         '</div>'+
       '</main>';
@@ -499,6 +540,34 @@ setInterval(()=>{
 }, 15000);
 
 loadDB();
+
+function exportRoomImage(roomId){
+  const room = db.rooms.find(r=>r.id===roomId);
+  const el = document.getElementById('exportArea');
+  if(!el) return;
+  if(typeof html2canvas === 'undefined'){
+    alert('No se pudo cargar el generador de imagen. Revisá tu conexión a internet e intentá de nuevo.');
+    return;
+  }
+  el.classList.add('exporting');
+  html2canvas(el, { backgroundColor: '#0a1220', scale: 2 }).then(canvas => {
+    el.classList.remove('exporting');
+    canvas.toBlob(blob => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const safeName = (room ? room.name : 'habitacion').replace(/[^a-z0-9áéíóúñ]+/gi,'_');
+      a.href = url;
+      a.download = safeName + '_' + nowStamp().date + '.png';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(()=>URL.revokeObjectURL(url), 3000);
+    });
+  }).catch(()=>{
+    el.classList.remove('exporting');
+    alert('No se pudo generar la imagen.');
+  });
+}
 
 if('serviceWorker' in navigator){
   window.addEventListener('load', ()=>{

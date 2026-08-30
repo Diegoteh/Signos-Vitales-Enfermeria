@@ -92,6 +92,10 @@
   .vital .vunit{font-size:9px; color:var(--muted-2); margin-top:1px;}
   .vital.na .vval{color:var(--muted-2); text-shadow:none; font-size:15px;}
 
+  .obsbox{margin-top:10px; background:var(--panel-2); border:1px solid var(--border-soft); border-radius:12px; padding:10px 12px;}
+  .obslabel{font-size:9.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); font-weight:700; margin-bottom:4px;}
+  .obstext{font-size:13px; color:var(--text); line-height:1.45; white-space:pre-wrap;}
+
   .newctrl-btn{width:100%; margin-top:16px; background:var(--cyan); color:#06231f; border:none; border-radius:12px; padding:14px; font-size:15px; font-weight:700; cursor:pointer;}
   .newctrl-btn:active{opacity:.85;}
 
@@ -111,6 +115,7 @@
   .time-badge-row{display:flex; align-items:center; gap:10px; margin-top:8px;}
   .histrow .hvals{flex:1; display:flex; flex-wrap:wrap; gap:4px 10px; font-family:var(--mono); font-size:11.5px; color:var(--text);}
   .histrow .hvals em{color:var(--muted-2); font-style:normal;}
+  .histrow .hobs{width:100%; margin-top:4px; color:var(--muted); font-family:var(--sans); font-size:11.5px; font-style:italic; white-space:pre-wrap;}
   .histrow .hdel{background:none; border:none; color:var(--muted-2); font-size:15px; cursor:pointer; padding:4px;}
   .histrow .hdel:active{color:var(--red);}
   .histrow .hedit{background:none; border:none; color:var(--muted-2); font-size:14px; cursor:pointer; padding:4px;}
@@ -132,6 +137,11 @@
   .numinput{width:100%; background:var(--panel-2); border:1.5px solid var(--border); border-radius:12px; padding:13px 14px; color:var(--text); font-family:var(--mono); font-size:20px; font-weight:700;}
   .numinput:focus{outline:none; border-color:var(--cyan);}
   .numinput::placeholder{color:var(--muted-2); font-weight:400; font-size:15px;}
+
+  .obs-field{padding-top:16px; border-top:1px dashed var(--border);}
+  .obsinput{width:100%; min-height:70px; background:var(--panel-2); border:1.5px solid var(--border); border-radius:12px; padding:12px 14px; color:var(--text); font-family:var(--sans); font-size:14.5px; resize:vertical;}
+  .obsinput:focus{outline:none; border-color:var(--cyan);}
+  .obsinput::placeholder{color:var(--muted-2);}
 
   .ta-pair{display:flex; align-items:center; gap:8px;}
   .ta-pair .numinput{text-align:center;}
@@ -213,7 +223,7 @@ function openRoom(id){ currentRoomId = id; view = 'room'; render(); }
 function openNewControl(id){
   currentRoomId = id;
   editingId = null;
-  draft = { ta_sys:'', ta_dia:'', fc:'', spo2:'', temp:'', dsign:null, dvalue:'', catsign:null, catvalue:'', drensign:null, drenvalue:'', time: nowTime() };
+  draft = { ta_sys:'', ta_dia:'', fc:'', spo2:'', temp:'', dsign:null, dvalue:'', catsign:null, catvalue:'', drensign:null, drenvalue:'', obs:'', time: nowTime() };
   view = 'newControl';
   render();
 }
@@ -227,6 +237,7 @@ function openEditControl(roomId, recId){
     dsign: rec.dsign ?? null, dvalue: rec.dvalue ?? '',
     catsign: rec.catsign ?? null, catvalue: rec.catvalue ?? '',
     drensign: rec.drensign ?? null, drenvalue: rec.drenvalue ?? '',
+    obs: rec.obs ?? '',
     time: rec.time
   };
   view = 'newControl';
@@ -252,7 +263,8 @@ function saveControl(){
     catsign: draft.catsign || null,
     catvalue: draft.catvalue === '' ? null : draft.catvalue,
     drensign: draft.drensign || null,
-    drenvalue: draft.drenvalue === '' ? null : draft.drenvalue
+    drenvalue: draft.drenvalue === '' ? null : draft.drenvalue,
+    obs: draft.obs ? draft.obs.trim() : null
   };
   if(editingId){
     const list = db.records[roomId] || [];
@@ -366,7 +378,9 @@ function render(){
         vitalBox('Diuresis', rec && (rec.dsign || rec.dvalue) ? (rec.dsign||'')+(rec.dvalue||'') : null, rec && rec.dvalue ? 'ml':'', COLORS.diu)+
         vitalBox('Catarsis', rec && (rec.catsign || rec.catvalue) ? (rec.catsign||'')+(rec.catvalue||'') : null, rec && rec.catvalue ? 'veces':'', COLORS.cat)+
         vitalBox('Drenaje', rec && (rec.drensign || rec.drenvalue) ? (rec.drensign||'')+(rec.drenvalue||'') : null, rec && rec.drenvalue ? 'ml':'', COLORS.dren)+
-      '</div></div>';
+      '</div>'+
+      (rec && rec.obs ? '<div class="obsbox"><div class="obslabel">Observaciones</div><div class="obstext">'+rec.obs.replace(/</g,'&lt;')+'</div></div>' : '')+
+      '</div>';
 
     const sorted = list.slice().sort((a,b)=> (b.date+b.time).localeCompare(a.date+a.time));
     let histRows = '';
@@ -387,7 +401,9 @@ function render(){
         ].filter(Boolean);
         histRows += '<div class="histrow">'+
           '<div class="htime">'+r.time+'</div>'+
-          '<div class="hvals">'+(bits.length?bits.join(' &nbsp;·&nbsp; '):'<em>sin datos</em>')+'</div>'+
+          '<div class="hvals">'+(bits.length?bits.join(' &nbsp;·&nbsp; '):'<em>sin datos</em>')+
+            (r.obs ? '<div class="hobs">'+r.obs.replace(/</g,'&lt;')+'</div>' : '')+
+          '</div>'+
           '<button class="hedit" onclick="openEditControl(\''+room.id+'\',\''+r.id+'\')">✎</button>'+
           '<button class="hdel" onclick="deleteRecord(\''+room.id+'\',\''+r.id+'\')">✕</button>'+
         '</div>';
@@ -476,6 +492,10 @@ function render(){
               '<input class="numinput" id="f_drenvalue" type="number" inputmode="numeric" placeholder="cantidad ml" value="'+draft.drenvalue+'">'+
             '</div>'+
           '</div>'+
+          '<div class="fieldrow obs-field">'+
+            '<div class="flabel">Observaciones <span class="unit">opcional</span></div>'+
+            '<textarea class="obsinput" id="f_obs" placeholder="Notas, novedades, indicaciones...">'+draft.obs+'</textarea>'+
+          '</div>'+
           '<div class="fieldrow">'+
             '<div class="flabel">Hora del control</div>'+
             '<div class="time-badge-row">'+
@@ -501,6 +521,8 @@ function render(){
       const badgeWrap = document.getElementById('shiftBadgeWrap');
       if(badgeWrap) badgeWrap.innerHTML = shiftBadge(draft.time);
     });
+    const obsEl = document.getElementById('f_obs');
+    if(obsEl) obsEl.addEventListener('input', ()=>{ draft.obs = obsEl.value; });
 
     return;
   }

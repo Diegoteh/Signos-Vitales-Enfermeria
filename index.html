@@ -74,6 +74,15 @@
   .addroom .plus{font-size:22px; color:var(--cyan); line-height:1;}
   .addroom span{font-size:11.5px; color:var(--muted);}
 
+  .allbtn{width:100%; background:var(--panel); border:1px solid var(--border); color:var(--muted); font-size:13px; font-weight:700; padding:12px; border-radius:12px; cursor:pointer; margin-bottom:14px; display:flex; align-items:center; justify-content:center; gap:6px;}
+  .allbtn:active{border-color:var(--cyan); color:var(--cyan);}
+  .allroom-block{margin-bottom:24px;}
+  .allroom-block:last-child{margin-bottom:0;}
+  .allroom-title{font-size:16px; font-weight:700; color:var(--text); margin-bottom:8px; padding-bottom:6px; border-bottom:1px solid var(--border-soft);}
+  #exportAllArea.exporting{padding:16px; background:var(--bg);}
+  #exportAllArea.exporting .export-title{display:block; font-size:17px; font-weight:700; color:var(--text); margin-bottom:16px;}
+  #exportAllArea.exporting .export-title span{font-weight:400; color:var(--muted); font-size:13px;}
+
   .addroom-form{display:flex; gap:8px; margin-top:6px;}
   .addroom-form input{flex:1; background:var(--panel-2); border:1px solid var(--border); border-radius:10px; padding:11px 12px; color:var(--text); font-size:15px; font-family:var(--sans);}
   .addroom-form input:focus{outline:none; border-color:var(--cyan);}
@@ -220,6 +229,7 @@ function deleteRoom(id){
   render();
 }
 function openRoom(id){ currentRoomId = id; view = 'room'; render(); }
+function openAllView(){ view = 'allView'; render(); }
 function openNewControl(id){
   currentRoomId = id;
   editingId = null;
@@ -316,6 +326,49 @@ function vitalBox(label, val, unit, colorVar){
   '</div>';
 }
 
+function buildMonitorHtml(room, rec){
+  return '<div class="monitor"><div class="monitor-head"><span>Último control'+(rec ? ' · '+rec.dateDisplay+' '+rec.time : '')+'</span>'+(rec?shiftBadge(rec.time):'')+'</div>'+
+    '<div class="monitor-grid">'+
+      vitalBox('TA', rec && rec.ta_sys && rec.ta_dia ? rec.ta_sys+'/'+rec.ta_dia : null, 'mmHg', COLORS.ta)+
+      vitalBox('FC', rec ? rec.fc : null, 'lpm', COLORS.fc)+
+      vitalBox('SpO2', rec ? rec.spo2 : null, '%', COLORS.spo2)+
+      vitalBox('Temp', rec ? rec.temp : null, '°C', COLORS.temp)+
+      vitalBox('Diuresis', rec && (rec.dsign || rec.dvalue) ? (rec.dsign||'')+(rec.dvalue||'') : null, rec && rec.dvalue ? 'ml':'', COLORS.diu)+
+      vitalBox('Catarsis', rec && (rec.catsign || rec.catvalue) ? (rec.catsign||'')+(rec.catvalue||'') : null, rec && rec.catvalue ? 'veces':'', COLORS.cat)+
+      vitalBox('Drenaje', rec && (rec.drensign || rec.drenvalue) ? (rec.drensign||'')+(rec.drenvalue||'') : null, rec && rec.drenvalue ? 'ml':'', COLORS.dren)+
+    '</div>'+
+    (rec && rec.obs ? '<div class="obsbox"><div class="obslabel">Observaciones</div><div class="obstext">'+rec.obs.replace(/</g,'&lt;')+'</div></div>' : '')+
+    '</div>';
+}
+function buildHistoryHtml(room, list, editable){
+  const sorted = list.slice().sort((a,b)=> (b.date+b.time).localeCompare(a.date+a.time));
+  if(!sorted.length) return '<div class="emptystate">Todavía no hay controles<br>cargados en esta habitación.</div>';
+  let html = '', lastKey = null;
+  sorted.forEach(r=>{
+    const s = getShift(r.time);
+    const key = r.date+'-'+s.abbr;
+    if(key !== lastKey){
+      html += '<div class="grouphead"><span class="shift-badge '+s.abbr+'">'+s.label+'</span><span class="gdate">'+r.dateDisplay+'</span></div>';
+      lastKey = key;
+    }
+    const ta = (r.ta_sys && r.ta_dia) ? 'TA '+r.ta_sys+'/'+r.ta_dia : '';
+    const bits = [ta, r.fc?('FC '+r.fc):'', r.spo2?('SpO2 '+r.spo2+'%'):'', r.temp?('T '+r.temp+'°'):'',
+      (r.dsign||r.dvalue)?('Diu '+(r.dsign||'')+(r.dvalue||'')):'',
+      (r.catsign||r.catvalue)?('Cat '+(r.catsign||'')+(r.catvalue||'')):'',
+      (r.drensign||r.drenvalue)?('Dren '+(r.drensign||'')+(r.drenvalue||'')):''
+    ].filter(Boolean);
+    html += '<div class="histrow">'+
+      '<div class="htime">'+r.time+'</div>'+
+      '<div class="hvals">'+(bits.length?bits.join(' &nbsp;·&nbsp; '):'<em>sin datos</em>')+
+        (r.obs ? '<div class="hobs">'+r.obs.replace(/</g,'&lt;')+'</div>' : '')+
+      '</div>'+
+      (editable ? '<button class="hedit" onclick="openEditControl(\''+room.id+'\',\''+r.id+'\')">✎</button>'+
+      '<button class="hdel" onclick="deleteRecord(\''+room.id+'\',\''+r.id+'\')">✕</button>' : '')+
+    '</div>';
+  });
+  return html;
+}
+
 function render(){
   const app = document.getElementById('app');
   if(!loaded){ app.innerHTML = '<div class="emptystate">Cargando…</div>'; return; }
@@ -350,6 +403,7 @@ function render(){
         '<span class="clock" id="clock">'+nowTime()+'</span>'+
       '</div></div>'+
       '<main>'+
+        (db.rooms.length ? '<button class="allbtn" onclick="openAllView()">▤ Ver todos los controles</button>' : '')+
         (db.rooms.length ? '<div class="roomgrid">'+cards+
           '<div class="addroom" id="addRoomBtn" onclick="showAddRoomForm()">'+
             '<div class="plus">+</div><span>Habitación</span>'+
@@ -367,50 +421,8 @@ function render(){
     if(!room){ goHome(); return; }
     const rec = latestOf(room.id);
     const list = db.records[room.id] || [];
-
-    const monitor =
-      '<div class="monitor"><div class="monitor-head"><span>Último control'+(rec ? ' · '+rec.dateDisplay+' '+rec.time : '')+'</span>'+(rec?shiftBadge(rec.time):'')+'</div>'+
-      '<div class="monitor-grid">'+
-        vitalBox('TA', rec && rec.ta_sys && rec.ta_dia ? rec.ta_sys+'/'+rec.ta_dia : null, 'mmHg', COLORS.ta)+
-        vitalBox('FC', rec ? rec.fc : null, 'lpm', COLORS.fc)+
-        vitalBox('SpO2', rec ? rec.spo2 : null, '%', COLORS.spo2)+
-        vitalBox('Temp', rec ? rec.temp : null, '°C', COLORS.temp)+
-        vitalBox('Diuresis', rec && (rec.dsign || rec.dvalue) ? (rec.dsign||'')+(rec.dvalue||'') : null, rec && rec.dvalue ? 'ml':'', COLORS.diu)+
-        vitalBox('Catarsis', rec && (rec.catsign || rec.catvalue) ? (rec.catsign||'')+(rec.catvalue||'') : null, rec && rec.catvalue ? 'veces':'', COLORS.cat)+
-        vitalBox('Drenaje', rec && (rec.drensign || rec.drenvalue) ? (rec.drensign||'')+(rec.drenvalue||'') : null, rec && rec.drenvalue ? 'ml':'', COLORS.dren)+
-      '</div>'+
-      (rec && rec.obs ? '<div class="obsbox"><div class="obslabel">Observaciones</div><div class="obstext">'+rec.obs.replace(/</g,'&lt;')+'</div></div>' : '')+
-      '</div>';
-
-    const sorted = list.slice().sort((a,b)=> (b.date+b.time).localeCompare(a.date+a.time));
-    let histRows = '';
-    if(sorted.length){
-      let lastKey = null;
-      sorted.forEach(r=>{
-        const s = getShift(r.time);
-        const key = r.date+'-'+s.abbr;
-        if(key !== lastKey){
-          histRows += '<div class="grouphead"><span class="shift-badge '+s.abbr+'">'+s.label+'</span><span class="gdate">'+r.dateDisplay+'</span></div>';
-          lastKey = key;
-        }
-        const ta = (r.ta_sys && r.ta_dia) ? 'TA '+r.ta_sys+'/'+r.ta_dia : '';
-        const bits = [ta, r.fc?('FC '+r.fc):'', r.spo2?('SpO2 '+r.spo2+'%'):'', r.temp?('T '+r.temp+'°'):'',
-          (r.dsign||r.dvalue)?('Diu '+(r.dsign||'')+(r.dvalue||'')):'',
-          (r.catsign||r.catvalue)?('Cat '+(r.catsign||'')+(r.catvalue||'')):'',
-          (r.drensign||r.drenvalue)?('Dren '+(r.drensign||'')+(r.drenvalue||'')):''
-        ].filter(Boolean);
-        histRows += '<div class="histrow">'+
-          '<div class="htime">'+r.time+'</div>'+
-          '<div class="hvals">'+(bits.length?bits.join(' &nbsp;·&nbsp; '):'<em>sin datos</em>')+
-            (r.obs ? '<div class="hobs">'+r.obs.replace(/</g,'&lt;')+'</div>' : '')+
-          '</div>'+
-          '<button class="hedit" onclick="openEditControl(\''+room.id+'\',\''+r.id+'\')">✎</button>'+
-          '<button class="hdel" onclick="deleteRecord(\''+room.id+'\',\''+r.id+'\')">✕</button>'+
-        '</div>';
-      });
-    } else {
-      histRows = '<div class="emptystate">Todavía no hay controles<br>cargados en esta habitación.</div>';
-    }
+    const monitor = buildMonitorHtml(room, rec);
+    const histRows = buildHistoryHtml(room, list, true);
 
     app.innerHTML =
       '<div class="topbar backrow" style="padding-top:14px;">'+
@@ -428,6 +440,37 @@ function render(){
           '<div class="histlist">'+histRows+'</div>'+
         '</div>'+
         '<button class="newctrl-btn" onclick="openNewControl(\''+room.id+'\')">+ Nuevo control</button>'+
+      '</main>';
+    return;
+  }
+
+  if(view === 'allView'){
+    const stamp = nowStamp();
+    const roomBlocks = db.rooms.map(room=>{
+      const rec = latestOf(room.id);
+      const list = db.records[room.id] || [];
+      if(!list.length) return '';
+      return '<div class="allroom-block">'+
+        '<div class="allroom-title">'+room.name+'</div>'+
+        buildMonitorHtml(room, rec)+
+        '<div class="histlist">'+buildHistoryHtml(room, list, false)+'</div>'+
+      '</div>';
+    }).join('');
+    const hasAny = db.rooms.some(r => (db.records[r.id]||[]).length);
+
+    app.innerHTML =
+      '<div class="topbar backrow" style="padding-top:14px;">'+
+        '<button class="backbtn" onclick="goHome()">‹ Habitaciones</button>'+
+      '</div>'+
+      '<div class="backrow" style="padding-top:0;">'+
+        '<div class="roomtitle-wrap"><div class="roomtitle">Todos los controles</div><div class="roomsub">'+db.rooms.length+' habitaci'+(db.rooms.length===1?'ón':'ones')+'</div></div>'+
+        '<button class="exportbtn" onclick="exportAllImage()">⬇ Imagen</button>'+
+      '</div>'+
+      '<main>'+
+        '<div id="exportAllArea">'+
+          '<div class="export-title">Todos los controles <span>· '+stamp.display+'</span></div>'+
+          (hasAny ? roomBlocks : '<div class="emptystate">Todavía no hay controles<br>cargados en ninguna habitación.</div>')+
+        '</div>'+
       '</main>';
     return;
   }
@@ -562,6 +605,32 @@ setInterval(()=>{
 }, 15000);
 
 loadDB();
+
+function exportAllImage(){
+  const el = document.getElementById('exportAllArea');
+  if(!el) return;
+  if(typeof html2canvas === 'undefined'){
+    alert('No se pudo cargar el generador de imagen. Revisá tu conexión a internet e intentá de nuevo.');
+    return;
+  }
+  el.classList.add('exporting');
+  html2canvas(el, { backgroundColor: '#0a1220', scale: 2 }).then(canvas => {
+    el.classList.remove('exporting');
+    canvas.toBlob(blob => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'todos_los_controles_' + nowStamp().date + '.png';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(()=>URL.revokeObjectURL(url), 3000);
+    });
+  }).catch(()=>{
+    el.classList.remove('exporting');
+    alert('No se pudo generar la imagen.');
+  });
+}
 
 function exportRoomImage(roomId){
   const room = db.rooms.find(r=>r.id===roomId);
